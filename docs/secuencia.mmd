@@ -1,1 +1,50 @@
+sequenceDiagram
+    participant W as Web de ventas
+    participant G as Gateway
+    participant A as API de impresión
+    participant L as Agente local
+    participant T as Servicio de tickets
+    participant P as Impresora
 
+    W->>G: POST /impresiones {codigo}
+    G->>A: Crear trabajo
+    A->>A: Asignar ID y guardar PENDIENTE
+    A-->>G: 202 {trabajo_id, estado: PENDIENTE}
+    G-->>W: 202 {trabajo_id, estado: PENDIENTE}
+
+    loop Cada dos segundos
+        L->>G: POST /impresiones/siguiente
+        G->>A: Reservar siguiente pendiente
+        A->>A: Reserva atómica bajo bloqueo
+        alt Sin pendientes
+            A-->>G: 204 sin cuerpo
+            G-->>L: 204 sin cuerpo
+        else Trabajo reservado
+            A-->>G: 200 {trabajo_id, codigo, estado: EN_PROCESO}
+            G-->>L: Trabajo reservado
+            L->>G: GET /api/tickets/{codigo}
+            G->>T: Obtener PNG
+            T-->>G: PNG o error
+            G-->>L: PNG o error
+            alt Descarga correcta
+                L->>P: Enviar ticket a impresora instalada
+                P-->>L: Resultado del envío
+                alt Impresión exitosa
+                    L->>G: POST /impresiones/{trabajo_id}/resultado {estado: IMPRESO}
+                else Error de impresión
+                    L->>G: POST /impresiones/{trabajo_id}/resultado {estado: ERROR}
+                end
+            else Error de descarga
+                L->>G: POST /impresiones/{trabajo_id}/resultado {estado: ERROR}
+            end
+            G->>A: Registrar resultado
+            A->>A: Validar EN_PROCESO y guardar estado final
+            A-->>G: 200 {trabajo_id, estado}
+            G-->>L: Resultado registrado
+        end
+    end
+
+    W->>G: GET /impresiones/{trabajo_id}
+    G->>A: Consultar trabajo
+    A-->>G: 200 {trabajo_id, codigo, estado}
+    G-->>W: Estado del trabajo
