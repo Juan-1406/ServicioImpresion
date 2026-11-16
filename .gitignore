@@ -13,3 +13,5 @@ htmlcov/
 Thumbs.db
 .idea/
 .vscode/
+agent/agent-state.json
+agent/agent-state.tmp
